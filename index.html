@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>A7a & Hn</title>
+<style>
+  :root{
+    --bg-top:#7ec8e3;
+    --bg-bottom:#c9f2c7;
+    --panel:#1c1c28;
+    --panel-light:#2c2c3d;
+    --accent:#ffb703;
+    --accent2:#ff5d73;
+    --text:#f4f4f4;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;padding:0;height:100%;
+    background:#0d0d14;
+    font-family:'Trebuchet MS',Verdana,sans-serif;
+    color:var(--text);
+    overflow:hidden;
+    touch-action:none;
+    user-select:none;
+  }
+  #gameWrap{
+    position:relative;
+    width:100vw;height:100vh;
+    display:flex;align-items:center;justify-content:center;
+    background:#0d0d14;
+  }
+  #stage{
+    position:relative;
+    width:100%;
+    max-width:960px;
+    aspect-ratio:960/540;
+    max-height:100vh;
+    background:#000;
+    box-shadow:0 0 40px rgba(0,0,0,.6);
+  }
+  canvas{
+    display:block;
+    width:100%;
+    height:100%;
+    image-rendering:pixelated;
+    background:linear-gradient(var(--bg-top),var(--bg-bottom));
+  }
+
+  /* ---- HUD ---- */
+  #hud{
+    position:absolute;top:8px;left:8px;right:8px;
+    display:flex;justify-content:space-between;align-items:flex-start;
+    pointer-events:none;
+    font-size:clamp(12px,2.2vw,18px);
+  }
+  #hud .chip{
+    background:rgba(0,0,0,.55);
+    border:2px solid var(--accent);
+    border-radius:10px;
+    padding:4px 10px;
+    font-weight:bold;
+  }
+
+  /* ---- Overlays (menu / dialogue / end screens) ---- */
+  .overlay{
+    position:absolute;inset:0;
+    background:rgba(6,6,12,.88);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:5%;
+    gap:14px;
+  }
+  .hidden{display:none !important;}
+  .overlay h1{
+    font-size:clamp(20px,4.5vw,40px);
+    color:var(--accent);
+    margin:0 0 6px 0;
+    text-shadow:2px 2px 0 #000;
+  }
+  .overlay p, .overlay .line{
+    font-size:clamp(13px,2.6vw,20px);
+    max-width:640px;
+    line-height:1.5;
+  }
+  .speaker{color:var(--accent2);font-weight:bold;}
+  button.btn{
+    font-family:inherit;
+    font-size:clamp(14px,2.8vw,20px);
+    font-weight:bold;
+    background:var(--accent);
+    color:#20200d;
+    border:none;
+    border-radius:10px;
+    padding:10px 26px;
+    cursor:pointer;
+    box-shadow:0 4px 0 #b5810a;
+    transition:transform .05s;
+  }
+  button.btn:active{transform:translateY(3px);box-shadow:0 1px 0 #b5810a;}
+  button.btn.secondary{background:var(--panel-light);color:var(--text);box-shadow:0 4px 0 #111;}
+
+  /* ---- Touch controls ---- */
+  #touchControls{
+    position:absolute;bottom:0;left:0;right:0;
+    display:flex;justify-content:space-between;align-items:flex-end;
+    padding:14px;pointer-events:none;
+  }
+  .tbtn{
+    pointer-events:auto;
+    width:64px;height:64px;
+    border-radius:50%;
+    background:rgba(255,255,255,.18);
+    border:2px solid rgba(255,255,255,.5);
+    color:#fff;font-size:26px;
+    display:flex;align-items:center;justify-content:center;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #dpad{display:flex;gap:10px;}
+  #jumpBtn{margin-bottom:4px;}
+</style>
+</head>
+<body>
+<div id="gameWrap">
+  <div id="stage">
+    <canvas id="c" width="960" height="540"></canvas>
+
+    <div id="hud" class="hidden">
+      <div class="chip" id="hudMission">Mission 1</div>
+      <div class="chip" id="hudIpads">iPads: 0/0</div>
+    </div>
+
+    <!-- Main menu -->
+    <div id="menuScreen" class="overlay">
+      <h1 id="gameTitle">A7a Dzhuen &Sadam hn </h1>
+      <p>Help Ahmad collect every iPad</p>
+      <button class="btn" id="btnStart">New Game</button>
+      <button class="btn secondary hidden" id="btnContinue">Continue</button>
+      <button class="btn secondary hidden" id="btnReset">Erase Save</button>
+    </div>
+
+    <!-- Dialogue box -->
+    <div id="dialogueScreen" class="overlay hidden">
+      <div id="dialogueLines"></div>
+      <button class="btn" id="btnDialogueNext">Continue</button>
+    </div>
+
+    <!-- Mission complete -->
+    <div id="missionCompleteScreen" class="overlay hidden">
+      <h1>Mission Complete!</h1>
+      <p id="missionCompleteText"></p>
+      <button class="btn" id="btnNextMission">Next</button>
+    </div>
+
+    <!-- Win screen -->
+    <div id="winScreen" class="overlay hidden">
+      <h1>You Win!</h1>
+      <p>Ahmad and Hana are together again. The End.</p>
+      <button class="btn" id="btnPlayAgain">Play Again</button>
+    </div>
+
+    <!-- Touch controls -->
+    <div id="touchControls" class="hidden">
+      <div id="dpad">
+        <div class="tbtn" id="btnLeft">◀</div>
+        <div class="tbtn" id="btnRight">▶</div>
+      </div>
+      <div class="tbtn" id="jumpBtn">▲</div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= AUDIO =================
+     Put mission1.mp3 ... mission5.mp3 in the SAME FOLDER as this html file.
+     If a file is missing, the game will simply play silently (no crash). -->
+<audio id="mission1Audio" src="mission1.mp3" loop></audio>
+<audio id="mission2Audio" src="mission2.mp3" loop></audio>
+<audio id="mission3Audio" src="mission3.mp3" loop></audio>
+<audio id="mission4Audio" src="mission4.mp3" loop></audio>
+<audio id="mission5Audio" src="mission5.mp3" loop></audio>
+<audio id="eatAudio" src="eat.mp3"></audio>
+
+<script>
+/* =========================================================================
+   A7a & June vs Malik  —  simple 2D platformer
+   -------------------------------------------------------------------------
+   HOW TO ADD YOUR OWN ART:
+   - Put head images named exactly as in HEAD_IMAGES below, next to this
+     file (same folder). PNG with transparent background works best,
+     roughly square, ~100x100px source is plenty.
+   - Put mission1.mp3 ... mission5.mp3 next to this file for music.
+   - If an image/audio file is missing, the game still runs fine — it just
+     falls back to a plain drawn head / silence.
+   ========================================================================= */
+
+// ---------- EASY-TO-EDIT CONFIG ----------
+const NAMES = { char1: "Ahmad", char2: "Hana", char3: "Dilon" };
+const HEAD_IMAGES = {
+  char1: "a7a.jpg",           // <-- your Ahmad head image
+  char2: "hana.jpg",          // <-- your June head image
+  char3: "dilon.jpg"          // <-- your Malik head image
+};
+const COLORS = {
+  char1: { body:"#2e6de0", pants:"#1c3f8a" },   // boy - player
+  char2: { body:"#e05d9a", pants:"#8a2e5c" },   // girl
+  char3: { body:"#7a1f1f", pants:"#2b0a0a" }    // villain boy
+};
+
+// ---------- LOAD HEAD IMAGES (with graceful fallback) ----------
+const heads = {};
+Object.keys(HEAD_IMAGES).forEach(key=>{
+  const img = new Image();
+  img.src = HEAD_IMAGES[key];
+  img.loaded = false; img.failed = false;
+  img.onload = ()=> img.loaded = true;
+  img.onerror = ()=> img.failed = true;
+  heads[key] = img;
+});
+
+// ---------- CANVAS ----------
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const GROUND_Y = H - 60;
+
+// ---------- INPUT ----------
+const keys = { left:false, right:false, jump:false };
+window.addEventListener('keydown', e=>{
+  if(['ArrowLeft','a','A'].includes(e.key)) keys.left = true;
+  if(['ArrowRight','d','D'].includes(e.key)) keys.right = true;
+  if(['ArrowUp','w','W',' '].includes(e.key)) keys.jump = true;
+});
+window.addEventListener('keyup', e=>{
+  if(['ArrowLeft','a','A'].includes(e.key)) keys.left = false;
+  if(['ArrowRight','d','D'].includes(e.key)) keys.right = false;
+  if(['ArrowUp','w','W',' '].includes(e.key)) keys.jump = false;
+});
+function bindTouch(el, onDown, onUp){
+  el.addEventListener('touchstart', e=>{e.preventDefault(); onDown();});
+  el.addEventListener('touchend', e=>{e.preventDefault(); onUp();});
+  el.addEventListener('mousedown', onDown);
+  el.addEventListener('mouseup', onUp);
+  el.addEventListener('mouseleave', onUp);
+}
+bindTouch(document.getElementById('btnLeft'), ()=>keys.left=true, ()=>keys.left=false);
+bindTouch(document.getElementById('btnRight'), ()=>keys.right=true, ()=>keys.right=false);
+bindTouch(document.getElementById('jumpBtn'), ()=>keys.jump=true, ()=>keys.jump=false);
+document.getElementById('touchControls').classList.remove('hidden'); // works with mouse too, harmless on desktop
+
+// ---------- LEVEL DATA ----------
+// platforms: {x,y,w,h}   ipads: {x,y}   enemies: {x,y,range,speed} (patrol hazard)
+function ground(width){ return {x:0, y:GROUND_Y, w:width, h:60}; }
+
+const LEVELS = [
+  { // Mission 1 - easy intro
+    width: 1800,
+    platforms: [ ground(1800), {x:300,y:400,w:140,h:20}, {x:600,y:330,w:140,h:20}, {x:900,y:400,w:160,h:20}, {x:1200,y:340,w:140,h:20} ],
+    ipads: [ {x:150,y:GROUND_Y-40}, {x:340,y:355}, {x:640,y:285}, {x:940,y:355}, {x:1240,y:295}, {x:1600,y:GROUND_Y-40} ],
+    enemies: []
+  },
+  { // Mission 2 - a few gaps
+    width: 2200,
+    platforms: [ ground(2200), {x:250,y:400,w:120,h:20}, {x:500,y:330,w:120,h:20}, {x:750,y:260,w:120,h:20}, {x:1050,y:330,w:150,h:20}, {x:1350,y:400,w:150,h:20}, {x:1650,y:320,w:130,h:20} ],
+    ipads: [ {x:270,y:355},{x:520,y:285},{x:770,y:215},{x:1080,y:285},{x:1380,y:355},{x:1670,y:275},{x:2000,y:GROUND_Y-40} ],
+    enemies: []
+  },
+  { // Mission 3 - kidnapping happens after this one's intro; slightly trickier jumps
+    width: 2500,
+    platforms: [ ground(2500), {x:200,y:390,w:110,h:20}, {x:420,y:320,w:110,h:20}, {x:640,y:250,w:110,h:20}, {x:860,y:320,w:110,h:20}, {x:1080,y:390,w:110,h:20}, {x:1350,y:300,w:150,h:20}, {x:1650,y:220,w:130,h:20}, {x:1950,y:320,w:150,h:20} ],
+    ipads: [ {x:220,y:345},{x:440,y:275},{x:660,y:205},{x:880,y:275},{x:1100,y:345},{x:1400,y:255},{x:1680,y:175},{x:1980,y:275},{x:2300,y:GROUND_Y-40} ],
+    enemies: [ {x:1500,y:GROUND_Y-30,range:120,speed:1.6} ]
+  },
+  { // Mission 4 - more enemies, longer gaps
+    width: 2800,
+    platforms: [ ground(2800), {x:220,y:400,w:100,h:20}, {x:420,y:340,w:100,h:20}, {x:620,y:280,w:100,h:20}, {x:840,y:220,w:100,h:20}, {x:1060,y:280,w:100,h:20}, {x:1280,y:340,w:100,h:20}, {x:1500,y:400,w:130,h:20}, {x:1780,y:300,w:130,h:20}, {x:2050,y:220,w:130,h:20}, {x:2320,y:320,w:150,h:20} ],
+    ipads: [ {x:240,y:355},{x:440,y:295},{x:640,y:235},{x:860,y:175},{x:1080,y:235},{x:1300,y:295},{x:1530,y:355},{x:1810,y:255},{x:2080,y:175},{x:2350,y:275} ],
+    enemies: [ {x:950,y:GROUND_Y-30,range:150,speed:1.8}, {x:2150,y:GROUND_Y-30,range:150,speed:2.0} ]
+  },
+  { // Mission 5 - final hideout, hardest but still fair
+    width: 3000,
+    platforms: [ ground(3000), {x:200,y:390,w:100,h:20}, {x:380,y:320,w:90,h:20}, {x:560,y:250,w:90,h:20}, {x:740,y:320,w:90,h:20}, {x:920,y:390,w:90,h:20}, {x:1100,y:300,w:120,h:20}, {x:1350,y:220,w:120,h:20}, {x:1600,y:300,w:120,h:20}, {x:1850,y:380,w:130,h:20}, {x:2100,y:280,w:130,h:20}, {x:2380,y:200,w:150,h:20}, {x:2650,y:320,w:180,h:20} ],
+    ipads: [ {x:220,y:345},{x:400,y:275},{x:580,y:205},{x:760,y:275},{x:940,y:345},{x:1140,y:255},{x:1390,y:175},{x:1640,y:255},{x:1890,y:335},{x:2140,y:235},{x:2420,y:155},{x:2700,y:275} ],
+    enemies: [ {x:650,y:GROUND_Y-30,range:130,speed:1.8}, {x:1500,y:GROUND_Y-30,range:150,speed:2.0}, {x:2250,y:GROUND_Y-30,range:160,speed:2.2} ]
+  }
+];
+
+// ---------- STORY / DIALOGUE ----------
+function line(who, text){ return {who, text}; }
+const DIALOGUE = {
+  beforeGame: [
+    line(NAMES.char1, "هانا بەراستی جەویکی خۆشە"),
+    line(NAMES.char2, "بەڵی بەراستی خۆشە"),
+    line(NAMES.char1, "چیت لەبەرە؟")
+  ],
+  before2: [
+    line(NAMES.char1, "هانا بۆ جوابت نەما؟")
+  ],
+  before3: [
+    line(NAMES.char3, "باشە باشە ... سەگ باب ئەمە تۆی لەگەڵ خوشكم قسەئەکەی؟"),
+    line(NAMES.char2, "کاکە تۆ بەهەلە تیگەشتوی"),
+    line(NAMES.char1, "باشە برام بۆ دژوین ئەدەی؟"),
+    line(NAMES.char1, "هانا رزگارت ئەکەم")
+  ],
+  before4: [
+    line(NAMES.char1, "تکایە خیراتر یاریکە تەواو کە هانا دەمری")
+  ],
+  before5: [
+    line(NAMES.char1, "ئەو بەدوامان ئەگری با لیرە برۆین")
+  ],
+  afterFight: [
+    line("", "دیلۆن لای مەکتەب ئەحەی گرت"),
+    line(NAMES.char3, "ئارازی برام خیرا با بیگین ئەمە خۆیەتی"),
+    line(NAMES.char1, "بۆستن قسەم هەیە...."),
+    line("", "*** ئەحمەد رای کرد ***"),
+    line("", "دیلۆن لە هانا ئەدات"),
+    line(NAMES.char3, "Ugh... Ugh...  Ugh...")
+  ],
+  afterKiss: [
+    line(NAMES.char2, "ئەحمەد ئەوەتۆی؟"),
+    line(NAMES.char1, "ماچم کە."),
+    line("", "Ahmad and Hana share a kiss. <3")
+  ]
+};
+
+// ---------- GAME STATE ----------
+const SAVE_KEY = "a7a_progress_v1";
+function loadProgress(){
+  try{ return JSON.parse(localStorage.getItem(SAVE_KEY)) || {completed:0}; }
+  catch(e){ return {completed:0}; }
+}
+function saveProgress(completed){
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify({completed})); }catch(e){}
+}
+
+let state = 'menu';       // menu | dialogue | playing | missionComplete | win
+let currentMission = 1;   // 1..5
+let dialogueQueue = [];
+let dialogueIndex = 0;
+let afterDialogueCallback = null;
+
+let player, ipadsRemaining, level, camX, enemies;
+
+function resetPlayer(){
+  player = { x:40, y:GROUND_Y-48, w:34, h:48, vx:0, vy:0, onGround:false, dir:1 };
+  camX = 0;
+}
+
+function startMission(n){
+  currentMission = n;
+  level = LEVELS[n-1];
+  ipadsRemaining = level.ipads.map(p=>({x:p.x,y:p.y,eaten:false}));
+  enemies = level.enemies.map(e=>({...e, dirn:1, startX:e.x}));
+  resetPlayer();
+  updateHud();
+  document.getElementById('hud').classList.remove('hidden');
+  playMissionAudio(n);
+  state = 'playing';
+}
+
+function playMissionAudio(n){
+  for(let i=1;i<=5;i++){
+    const a = document.getElementById('mission'+i+'Audio');
+    if(i===n){ a.currentTime = a.currentTime||0; a.play().catch(()=>{}); }
+    else { a.pause(); }
+  }
+}
+function stopAllAudio(){
+  for(let i=1;i<=5;i++){ document.getElementById('mission'+i+'Audio').pause(); }
+}
+function playEatSound(){
+  const base = document.getElementById('eatAudio');
+  const sfx = base.cloneNode(true); // clone so overlapping eats don't cut each other off
+  sfx.volume = 1.0;
+  sfx.play().catch(()=>{});
+}
+
+function updateHud(){
+  document.getElementById('hudMission').textContent = 'Mission ' + currentMission;
+  const eaten = ipadsRemaining.filter(p=>p.eaten).length;
+  document.getElementById('hudIpads').textContent = 'iPads: '+eaten+'/'+ipadsRemaining.length;
+}
+
+// ---------- DIALOGUE SYSTEM ----------
+function showDialogue(lines, onDone){
+  dialogueQueue = lines; dialogueIndex = 0; afterDialogueCallback = onDone;
+  state = 'dialogue';
+  document.getElementById('hud').classList.add('hidden');
+  renderDialogueLine();
+  show('dialogueScreen');
+}
+function renderDialogueLine(){
+  const d = dialogueQueue[dialogueIndex];
+  const box = document.getElementById('dialogueLines');
+  box.innerHTML = d.who
+    ? '<p><span class="speaker">'+d.who+':</span> '+d.text+'</p>'
+    : '<p class="line">'+d.text+'</p>';
+}
+document.getElementById('btnDialogueNext').addEventListener('click', ()=>{
+  dialogueIndex++;
+  if(dialogueIndex >= dialogueQueue.length){
+    hide('dialogueScreen');
+    const cb = afterDialogueCallback;
+    afterDialogueCallback = null;
+    if(cb) cb();
+  } else {
+    renderDialogueLine();
+  }
+});
+
+// ---------- SCREEN HELPERS ----------
+function show(id){ document.getElementById(id).classList.remove('hidden'); }
+function hide(id){ document.getElementById(id).classList.add('hidden'); }
+function hideAllOverlays(){
+  ['menuScreen','dialogueScreen','missionCompleteScreen','winScreen'].forEach(hide);
+}
+
+// ---------- FLOW: menu -> dialogue -> mission -> ... ----------
+function goToMenu(){
+  state = 'menu';
+  stopAllAudio();
+  hideAllOverlays();
+  document.getElementById('hud').classList.add('hidden');
+  const progress = loadProgress();
+  document.getElementById('btnContinue').classList.toggle('hidden', progress.completed<=0 || progress.completed>=5);
+  document.getElementById('btnReset').classList.toggle('hidden', progress.completed<=0);
+  show('menuScreen');
+}
+
+function beginNewGame(){
+  hideAllOverlays();
+  showDialogue(DIALOGUE.beforeGame, ()=> startMission(1));
+}
+
+function beginContinue(){
+  const progress = loadProgress();
+  const next = Math.min(progress.completed+1, 5);
+  hideAllOverlays();
+  goToMissionIntro(next);
+}
+
+function goToMissionIntro(n){
+  const introMap = {2:DIALOGUE.before2, 3:DIALOGUE.before3, 4:DIALOGUE.before4, 5:DIALOGUE.before5};
+  if(n===1){ startMission(1); return; }
+  const d = introMap[n];
+  hideAllOverlays();
+  showDialogue(d, ()=> startMission(n));
+}
+
+function missionFinished(){
+  state = 'missionComplete';
+  stopAllAudio();
+  const progress = loadProgress();
+  if(currentMission > progress.completed) saveProgress(currentMission);
+  if(currentMission === 5){
+    // final story beats, then win screen
+    hideAllOverlays();
+    showDialogue(DIALOGUE.afterFight, ()=>{
+      showDialogue(DIALOGUE.afterKiss, ()=>{
+        hideAllOverlays();
+        show('winScreen');
+      });
+    });
+  } else {
+    document.getElementById('missionCompleteText').textContent =
+      'You collected every iPad in Mission '+currentMission+'!';
+    show('missionCompleteScreen');
+  }
+}
+
+document.getElementById('btnStart').addEventListener('click', beginNewGame);
+document.getElementById('btnContinue').addEventListener('click', beginContinue);
+document.getElementById('btnReset').addEventListener('click', ()=>{
+  localStorage.removeItem(SAVE_KEY);
+  goToMenu();
+});
+document.getElementById('btnNextMission').addEventListener('click', ()=>{
+  hide('missionCompleteScreen');
+  goToMissionIntro(currentMission+1);
+});
+document.getElementById('btnPlayAgain').addEventListener('click', ()=>{
+  localStorage.removeItem(SAVE_KEY);
+  goToMenu();
+});
+
+// ---------- PHYSICS / UPDATE ----------
+const GRAVITY = 0.65, MOVE_SPEED = 4.2, JUMP_FORCE = -13.5, FRICTION = 0.8;
+
+function rectsOverlap(a,b){
+  return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;
+}
+
+function update(){
+  if(state !== 'playing') return;
+
+  // horizontal
+  if(keys.left){ player.vx = -MOVE_SPEED; player.dir = -1; }
+  else if(keys.right){ player.vx = MOVE_SPEED; player.dir = 1; }
+  else { player.vx *= FRICTION; }
+
+  // jump
+  if(keys.jump && player.onGround){ player.vy = JUMP_FORCE; player.onGround = false; }
+
+  player.vy += GRAVITY;
+  player.x += player.vx;
+  player.y += player.vy;
+
+  player.x = Math.max(0, Math.min(player.x, level.width - player.w));
+  if(player.y > H + 100){ resetPlayer(); } // fell off - respawn at start
+
+  player.onGround = false;
+  for(const p of level.platforms){
+    const feet = {x:player.x, y:player.y, w:player.w, h:player.h};
+    if(rectsOverlap(feet, p)){
+      const prevBottom = (player.y - player.vy) + player.h;
+      if(player.vy >= 0 && prevBottom <= p.y + 1){
+        player.y = p.y - player.h;
+        player.vy = 0;
+        player.onGround = true;
+      }
+    }
+  }
+
+  // enemies patrol
+  for(const e of enemies){
+    e.x += e.speed * e.dirn;
+    if(e.x > e.startX + e.range || e.x < e.startX - e.range) e.dirn *= -1;
+    const eb = {x:e.x-16,y:e.y-16,w:32,h:32};
+    const pb = {x:player.x,y:player.y,w:player.w,h:player.h};
+    if(rectsOverlap(eb,pb)){ resetPlayer(); }
+  }
+
+  // ipads
+  for(const ip of ipadsRemaining){
+    if(ip.eaten) continue;
+    const ib = {x:ip.x-14,y:ip.y-14,w:28,h:28};
+    const pb = {x:player.x,y:player.y,w:player.w,h:player.h};
+    if(rectsOverlap(ib,pb)){ ip.eaten = true; updateHud(); playEatSound(); }
+  }
+  if(ipadsRemaining.every(p=>p.eaten)){ missionFinished(); return; }
+
+  // camera
+  camX = Math.max(0, Math.min(player.x - W/2, level.width - W));
+}
+
+// ---------- DRAW ----------
+function drawCharacter(x, y, w, h, key, dir){
+  const c = COLORS[key];
+  ctx.save();
+  // legs
+  ctx.fillStyle = c.pants;
+  ctx.fillRect(x+4, y+h*0.62, w*0.34, h*0.38);
+  ctx.fillRect(x+w-4-w*0.34, y+h*0.62, w*0.34, h*0.38);
+  // torso
+  ctx.fillStyle = c.body;
+  ctx.fillRect(x+2, y+h*0.30, w-4, h*0.36);
+  // arms
+  ctx.fillRect(x-4, y+h*0.32, 8, h*0.30);
+  ctx.fillRect(x+w-4, y+h*0.32, 8, h*0.30);
+  // head
+  const headSize = w*1.15;
+  const hx = x + w/2 - headSize/2;
+  const hy = y - headSize*0.68;
+  const img = heads[key];
+  if(img && img.loaded){
+    ctx.drawImage(img, hx, hy, headSize, headSize);
+  } else {
+    ctx.fillStyle = "#f2c39a";
+    ctx.beginPath();
+    ctx.arc(x+w/2, hy+headSize/2, headSize/2, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = "#000";
+    const eyeOffset = dir>=0 ? 3 : -3;
+    ctx.fillRect(x+w/2-6+eyeOffset, hy+headSize/2-3, 3, 3);
+    ctx.fillRect(x+w/2+2+eyeOffset, hy+headSize/2-3, 3, 3);
+  }
+  ctx.restore();
+}
+
+function drawIpad(x,y,eaten){
+  if(eaten) return;
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.fillStyle = "#1a1a1a";
+  roundRect(ctx, -14,-18,28,36,4);
+  ctx.fill();
+  ctx.fillStyle = "#bfe8ff";
+  roundRect(ctx, -11,-14,22,26,2);
+  ctx.fill();
+  ctx.restore();
+}
+function drawEnemyHead(x,y){
+  const size = 34;
+  const img = heads.char3;
+  ctx.save();
+  if(img && img.loaded){
+    ctx.drawImage(img, x-size/2, y-size/2, size, size);
+  } else {
+    ctx.fillStyle = COLORS.char3.body; // reddish, not black
+    ctx.beginPath();
+    ctx.arc(x, y, size/2, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(x-6,y-3,3,3);
+    ctx.fillRect(x+3,y-3,3,3);
+  }
+  ctx.restore();
+}
+
+function roundRect(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  if(state !== 'playing') return;
+
+  ctx.save();
+  ctx.translate(-camX, 0);
+
+  // platforms
+  ctx.fillStyle = "#7a5230";
+  for(const p of level.platforms){
+    ctx.fillRect(p.x, p.y, p.w, p.h);
+    ctx.fillStyle = "#4f9e3b";
+    ctx.fillRect(p.x, p.y, p.w, 8);
+    ctx.fillStyle = "#7a5230";
+  }
+
+  // ipads
+  for(const ip of ipadsRemaining) drawIpad(ip.x, ip.y, ip.eaten);
+
+  // enemies (shown as Malik's head)
+  for(const e of enemies) drawEnemyHead(e.x, e.y);
+
+  // player
+  drawCharacter(player.x, player.y, player.w, player.h, 'char1', player.dir);
+
+  ctx.restore();
+}
+
+// ---------- MAIN LOOP ----------
+function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+goToMenu();
+loop();
+</script>
+</body>
+</html>
